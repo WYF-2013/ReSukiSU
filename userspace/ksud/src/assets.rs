@@ -64,12 +64,7 @@ pub fn list_supported_kmi() -> std::vec::Vec<std::string::String> {
     list
 }
 
-pub fn get_asset(name: &str) -> Result<Box<dyn AsRef<[u8]>>> {
-    let asset = Asset::get(name).ok_or_else(|| anyhow::anyhow!("asset not found: {name}"))?;
-    Ok(Box::new(asset.data))
-}
-
-pub fn get_asset_data(name: &str) -> Result<std::borrow::Cow<'static, [u8]>> {
+pub fn get_asset(name: &str) -> Result<std::borrow::Cow<'static, [u8]>> {
     let asset = Asset::get(name).ok_or_else(|| anyhow::anyhow!("asset not found: {name}"))?;
     Ok(asset.data)
 }
