@@ -64,29 +64,51 @@ GIT_BIN := /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin git
 
 KSU_SRC := $(realpath $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 
-LOCAL_GIT_EXISTS := $(shell test -e $(KSU_SRC)/../.git && echo 1 || echo 0)
+LOCAL_GIT_EXISTS := $(shell $(GIT_BIN) -C $(KSU_SRC) rev-parse --git-dir >/dev/null 2>&1 && echo 1 || echo 0)
+
+KSU_VERSION_FILE := $(KSU_SRC)/.ksu_version
 
 ifeq ($(LOCAL_GIT_EXISTS),0)
-$(info -- Can't find $(REPO_NAME) git submodule!)
-$(info -- If you are using bazel to build this kernel,)
-$(info -- Please go to Kbuild and change KSU_SRC to the absolute path of the KSU kernel folder.)
-$(error You should use $(REPO_NAME) as a git submodule instead of copying code directly)
+$(info -- $(REPO_NAME): can't find git in $(KSU_SRC))
+ifndef KSU_VERSION
+ifndef KSU_LOCAL_VERSION
+ifeq ($(shell test -f $(KSU_VERSION_FILE) && echo 1 || echo 0),0)
+$(info -- No .ksu_version file found.)
+$(info -- KSU_VERSION or KSU_LOCAL_VERSION env var required when git is unavailable.)
+$(info -- For Bazel: tools/bazel will auto-generate $(notdir $(KSU_VERSION_FILE)) before build.)
+$(error Can't determine $(REPO_NAME) version: no git, no .ksu_version, no KSU_VERSION env var)
+endif
+endif
+endif
 endif
 
 ifdef KBUILD_EXTMOD
 include $(KSU_SRC)/tools/ddk_compatible.mk
 endif
 
-$(shell cd $(KSU_SRC); [ -f ../.git/shallow ] && $(GIT_BIN) fetch --unshallow)
-KSU_LOCAL_VERSION := $(shell cd $(KSU_SRC); $(GIT_BIN) rev-list --count HEAD)
+ifeq ($(LOCAL_GIT_EXISTS),1)
+$(shell [ "$$($(GIT_BIN) -C $(KSU_SRC) rev-parse --is-shallow-repository)" = "true" ] && $(GIT_BIN) -C $(KSU_SRC) fetch --unshallow)
+KSU_LOCAL_VERSION := $(shell $(GIT_BIN) -C $(KSU_SRC) rev-list --count HEAD)
 KSU_VERSION := $(shell expr 30000 + $(KSU_LOCAL_VERSION) + 700)
+else
+ifndef KSU_VERSION
+KSU_LOCAL_VERSION := $(subst ','',$(shell sed -n 's/^LOCAL_VERSION=//p' $(KSU_VERSION_FILE) 2>/dev/null))
+KSU_VERSION := $(shell expr 30000 + $(KSU_LOCAL_VERSION) + 700)
+endif
+endif
 
-KSU_TAG_NAME    := $(shell cd $(KSU_SRC); $(GIT_BIN) describe --abbrev=0 --tags 2>/dev/null || echo "v4.1.0")
-KSU_COMMIT_SHA  := $(shell cd $(KSU_SRC); $(GIT_BIN) rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
-ifneq ($(shell cd $(KSU_SRC); $(GIT_BIN) diff-index --quiet HEAD; echo $$?),0)
+ifeq ($(LOCAL_GIT_EXISTS),1)
+KSU_TAG_NAME    := $(shell $(GIT_BIN) -C $(KSU_SRC) describe --abbrev=0 --tags 2>/dev/null || echo "v4.1.0")
+KSU_COMMIT_SHA  := $(shell $(GIT_BIN) -C $(KSU_SRC) rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
+ifneq ($(shell $(GIT_BIN) -C $(KSU_SRC) diff-index --quiet HEAD; echo $$?),0)
 KSU_COMMIT_SHA  := $(KSU_COMMIT_SHA)-dirty
 endif
-KSU_BRANCH_NAME := $(shell cd $(KSU_SRC); $(GIT_BIN) branch --show-current 2>/dev/null || echo "unknown")
+KSU_BRANCH_NAME := $(shell $(GIT_BIN) -C $(KSU_SRC) branch --show-current 2>/dev/null || echo "unknown")
+else
+KSU_TAG_NAME    := $(subst ','',$(shell sed -n 's/^TAG_NAME=//p' $(KSU_VERSION_FILE) 2>/dev/null || echo "v4.1.0"))
+KSU_COMMIT_SHA  := $(subst ','',$(shell sed -n 's/^COMMIT_SHA=//p' $(KSU_VERSION_FILE) 2>/dev/null || echo "unknown"))
+KSU_BRANCH_NAME := $(subst ','',$(shell sed -n 's/^BRANCH_NAME=//p' $(KSU_VERSION_FILE) 2>/dev/null || echo "unknown"))
+endif
 
 # call subst to process placeholders
 KSU_VERSION_FULL := $(subst ",,$(CONFIG_KSU_FULL_NAME_FORMAT))

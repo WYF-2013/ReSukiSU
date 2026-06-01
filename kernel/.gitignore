@@ -19,6 +19,7 @@ obj/
 
 CLAUDE.md
 .ddk-version
+.ksu_version
 .vscode/settings.json
 check_symbol
 ksu_uapi.h
